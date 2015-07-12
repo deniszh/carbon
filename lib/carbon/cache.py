@@ -18,6 +18,8 @@ from operator import itemgetter
 from random import choice
 from collections import defaultdict
 
+import re
+import random
 from carbon.conf import settings
 from carbon import events, log
 from carbon.pipeline import Processor
@@ -101,72 +103,198 @@ class SortedStrategy(DrainStrategy):
     return self.queue.next()
 
 
+class TunedStrategy(DrainStrategy):
+  """tuned - Metrics will be flushed from the cache to disk in a tuned way."""
+  def __init__(self, cache):
+    super(SortedStrategy, self).__init__(cache)
+
+    def _generate_queue(self):
+      while True:
+        start = time.time()
+        t = time.time()
+        g_count = 0
+        g_size = 0
+        queue = sorted(self.counts, key=lambda x: x[1])
+        if settings.LOG_CACHE_QUEUE_SORTS:
+          log.msg("[tuned#1] sorted %d queues in %.2f seconds" % (
+          len(queue), time.time() - t))
+
+        # parse config
+        m = re.search("^(?P<val1>\d+(?:\.\d+)?)(?P<unit1>[%s]?)$",
+                      str(settings.CACHE_WRITE_TUNED_STRATEGY_LARGEST))
+        if m:
+          if m.group("unit1") == "s":
+            timelimit1 = int(m.group("val1"))
+            limit1 = -1
+          elif m.group("unit1") == "%":
+            timelimit1 = -1
+            limit1 = len(queue) * float(m.group("val1")) / 100
+          else:
+            timelimit1 = -1
+            limit1 = int(m.group("val1"))
+        else:
+          limit1 = len(queue) * 0.01
+          timelimit1 = -1
+
+        m = re.search("^(?P<val2>\d+(?:\.\d+)?)(?P<unit2>[%s]?)$",
+                      str(settings.CACHE_WRITE_TUNED_STRATEGY_RANDOM))
+        if m:
+          if m.group("unit2") == "s":
+            timelimit2 = int(m.group("val2"))
+            limit2 = -1
+          elif m.group("unit2") == "%":
+            timelimit2 = -1
+            limit2 = len(queue) * float(m.group("val2")) / 100
+          else:
+            timelimit2 = -1
+            limit2 = int(m.group("val2"))
+        else:
+          limit2 = 0
+          timelimit2 = 60
+
+        m = re.search("^(?P<val3>\d+(?:\.\d+)?)(?P<unit3>[%s]?)$",
+                      str(settings.CACHE_WRITE_TUNED_STRATEGY_OLDEST))
+        if m:
+          if m.group("unit3") == "s":
+            timelimit3 = int(m.group("val3"))
+            limit3 = -1
+          elif m.group("unit3") == "%":
+            timelimit3 = -1
+            limit3 = len(queue) * float(m.group("val3")) / 100
+          else:
+            timelimit3 = -1
+            limit3 = int(m.group("val3"))
+        else:
+          limit3 = 0
+          timelimit3 = 100
+
+        # Step 1 : got largest queues (those with lots of metrics)
+        if limit1 > 0 or timelimit1 > 0:
+          t = time.time()
+          count = 0
+          size = 0
+          len1 = 0
+          len2 = 0
+          while queue:
+            if (limit1 != -1 and count >= limit1) or (timelimit1 != -1 and time.time() - t >= timelimit1):
+              break
+            metric = queue.pop()
+            count += 1
+            size += len(self[metric[0]])
+            if count == 1:
+              len1 = metric[1]
+            len2 = metric[1]
+            yield metric[0]
+          if settings.LOG_CACHE_QUEUE_SORTS:
+            log.msg(
+              "[tuned#1] written %d queues/%d metrics in %.2f seconds (%.2f queues/sec %.2f metrics/sec) (more numerous metrics/queue : %d -> %d)" % (
+              count, size, time.time() - t, count / (time.time() - t),
+              size / (time.time() - t), len1, len2))
+          g_size += size
+          g_count += count
+
+        # Step 2 : got random queues
+        if limit2 > 0 or timelimit2 > 0:
+          t = time.time()
+          random.shuffle(queue)
+          if settings.LOG_CACHE_QUEUE_SORTS:
+            log.msg("[tuned#2] shuffled %d queues in %.2f seconds" % (
+            len(queue), time.time() - t))
+
+          t = time.time()
+          count = 0
+          size = 0
+          while queue:
+            if (limit2 != -1 and count >= limit2) or (timelimit2 != -1 and time.time() - t >= timelimit2):
+              break
+            metric = queue.pop()
+            count += 1
+            size += len(self[metric[0]])
+            yield metric[0]
+          if settings.LOG_CACHE_QUEUE_SORTS:
+            log.msg(
+              "[tuned#2] written %d queues/%d metrics in %.2f seconds (%.2f queues/sec %.2f metrics/sec) (random)" % (
+              count, size, time.time() - t, count / (time.time() - t),
+              size / (time.time() - t)))
+          g_size += size
+          g_count += count
+
+        # Step 3 : got oldest queues (those with oldest metrics)
+        if limit3 > 0 or timelimit3 > 0:
+          t = time.time()
+          ordered = sorted(self.oldest, key=lambda x: x[1], reverse=True)
+          if settings.LOG_CACHE_QUEUE_SORTS:
+            log.msg("[tuned#3] sorted %d queues in %.2f seconds" % (
+            len(queue), time.time() - t))
+
+          t = time.time()
+          count = 0
+          size = 0
+          ts1 = 0
+          ts2 = 0
+          while ordered:
+            if (limit3 != -1 and count >= limit3) or (timelimit3 != -1 and time.time() - t >= timelimit3):
+              break
+            metric = ordered.pop()
+            count += 1
+            size += len(self[metric[0]])
+            if count == 1:
+              ts1 = time.time() - metric[1]
+            ts2 = time.time() - metric[1]
+            yield metric[0]
+          if settings.LOG_CACHE_QUEUE_SORTS:
+            log.msg(
+              "[tuned#3] written %d queues/%d metrics in %.2f seconds (%.2f queues/sec %.2f metrics/sec) (oldest : %d sec -> %d sec late)" % (
+              count, size, time.time() - t, count / (time.time() - t),
+              size / (time.time() - t), int(ts1), int(ts2)))
+          g_size += size
+          g_count += count
+
+        # Step 4 : got from flushlist (config file)
+        if FlushList is not None and len(queue) != 0:
+          t = time.time()
+          count = 0
+          size = 0
+          for metric in self.items():
+            if metric[0] in FlushList:
+              count += 1
+              size += len(self[metric[0]])
+              yield metric[0]
+          if count != 0:
+            if settings.LOG_CACHE_QUEUE_SORTS:
+              log.msg(
+                "[tuned#4] written %d queues/%d metrics in %.2f seconds (%.2f queues/sec %.2f metrics/sec) (flushlist)" % (
+                count, size, time.time() - t, count / (time.time() - t),
+                size / (time.time() - t)))
+          g_size += size
+          g_count += count
+
+        if settings.LOG_CACHE_QUEUE_SORTS:
+          log.msg(
+            "[tuned##] written %d queues/%d metrics in %.2f second (%.2f queues/sec %.2f metrics/sec) (global)" % (
+            g_count, g_size, time.time() - start,
+            g_count / (time.time() - start), g_size / (time.time() - start)))
+
+    self.queue = _generate_queue()
+
+  def choose_item(self):
+    return self.queue.next()
+
+
 class _MetricCache(defaultdict):
   """A Singleton dictionary of metric names and lists of their datapoints"""
   def __init__(self, strategy=None):
     self.lock = threading.Lock()
     self.size = 0
-<<<<<<< HEAD
     self.strategy = None
     if strategy:
       self.strategy = strategy(self)
     super(_MetricCache, self).__init__(dict)
-=======
-    self.method = method
-    if self.method == "sorted":
-      self.queue = self.gen_queue()
-    else:
-      self.queue = False
-    super(_MetricCache, self).__init__(defaultfactory)
-
-  def gen_queue(self):
-    while True:
-      t = time.time()
-      queue = sorted(self.counts, key=lambda x: x[1])
-      if settings.LOG_CACHE_QUEUE_SORTS:
-        log.msg("Sorted %d cache queues in %.6f seconds" % (len(queue), time.time() - t))
-      while queue:
-        yield queue.pop()[0]
-
-  def shutdown(self):
-    # change to simple dequeuing system. generator will not be used any more
-    self.method = "naive"
-
-  def store(self, metric, datapoint):
-    self.size += 1
-    self[metric].append(datapoint)
-    if self.isFull():
-      log.msg("MetricCache is full: self.size=%d" % self.size)
-      state.events.cacheFull()
-
-  def isFull(self):
-    # Short circuit this test if there is no max cache size, then we don't need
-    # to do the someone expensive work of calculating the current size.
-    return settings.MAX_CACHE_SIZE != float('inf') and self.size >= settings.MAX_CACHE_SIZE
-
-  def pop(self, metric=None):
-    if not self:
-      raise KeyError(metric)
-    elif not metric and self.method == "max":
-      metric = max(self.items(), key=lambda x: len(x[1]))[0]
-      datapoints = (metric, super(_MetricCache, self).pop(metric))
-    elif not metric and self.method == "naive":
-      datapoints = self.popitem()
-    elif not metric and self.method == "sorted":
-      metric = self.queue.next()
-      # Save only last value for each timestamp
-      popped = super(_MetricCache, self).pop(metric)
-      ordered = sorted(dict(popped).items(), key=lambda x: x[0])
-      datapoints = (metric, deque(ordered))
-    self.size -= len(datapoints[1])
-    return datapoints
->>>>>>> 2e63666... Add 'write cache to disk' feature
 
   @property
   def counts(self):
     return [(metric, len(datapoints)) for (metric, datapoints) in self.items()]
 
-<<<<<<< HEAD
   @property
   def is_full(self):
     if settings.MAX_CACHE_SIZE == float('inf'):
@@ -217,7 +345,20 @@ class _MetricCache(defaultdict):
     else:
       # Updating a duplicate does not increase the cache size
       self[metric][timestamp] = value
-=======
+
+  def shutdown(self):
+    # change to simple dequeuing system. generator will not be used any more
+    self.strategy = NaiveStrategy
+
+  @property
+  def oldest(self):
+    try:
+      return [(metric, sorted(datapoints)[0][0]) for (metric, datapoints) in self.items()]
+    except Exception, e:
+      log.exception(e)
+      log.msg("failed to create oldest list (%s)" % e)
+      return []
+
   def loadPersistMetricCache(self):
     persist_file = "%s/%s" % (settings.LOG_DIR, settings.CACHE_PERSIST_FILE)
     if not os.path.isfile(persist_file):
@@ -251,7 +392,7 @@ class _MetricCache(defaultdict):
       log.msg("Unable to load persisted cache : %s" % persist_file)
       persist.close()
 
-  def savePersistMetricCache(self, flush = False):
+  def savePersistMetricCache(self, flush=False):
     started = time.time()
     metrics = self.items()
     persist_file = "%s/%s" % (settings.LOG_DIR, settings.CACHE_PERSIST_FILE)
@@ -313,10 +454,8 @@ class _MetricCache(defaultdict):
       instrumentation.set('persist.queues', queues)
       instrumentation.set('persist.size', size)
       instrumentation.set('persist.fileSize', os.path.getsize(persist_file))
-      instrumentation.set('persist.fileGeneration', stopped-started)
-    log.msg("Persisted cache saved in %.2f seconds (metrics:%d queues:%d filesize:%d)" % (stopped-started, size, queues, os.path.getsize(persist_file)))
-
->>>>>>> 2e63666... Add 'write cache to disk' feature
+      instrumentation.set('persist.fileGeneration', stopped - started)
+    log.msg("Persisted cache saved in %.2f seconds (metrics:%d queues:%d filesize:%d)" % (stopped - started, size, queues, os.path.getsize(persist_file)))
 
 
 # Initialize a singleton cache instance
@@ -329,6 +468,8 @@ if settings.CACHE_WRITE_STRATEGY == 'sorted':
   write_strategy = SortedStrategy
 if settings.CACHE_WRITE_STRATEGY == 'random':
   write_strategy = RandomStrategy
+if settings.CACHE_WRITE_STRATEGY == 'tuned':
+  write_strategy = TunedStrategy
 
 MetricCache = _MetricCache(write_strategy)
 
