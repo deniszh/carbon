@@ -21,6 +21,7 @@ from collections import defaultdict
 import re
 import random
 from carbon.conf import settings
+from carbon.regexlist import FlushList, ForceFlushList
 from carbon import events, log
 from carbon.pipeline import Processor
 
@@ -106,7 +107,7 @@ class SortedStrategy(DrainStrategy):
 class TunedStrategy(DrainStrategy):
   """tuned - Metrics will be flushed from the cache to disk in a tuned way."""
   def __init__(self, cache):
-    super(SortedStrategy, self).__init__(cache)
+    super(TunedStrategy, self).__init__(cache)
 
     def _generate_queue(self):
       while True:
@@ -281,6 +282,25 @@ class TunedStrategy(DrainStrategy):
     return self.queue.next()
 
 
+class FlushStrategy(DrainStrategy):
+  """ Special strategy for flushing metrics by regex using graphite-web api """
+  def __init__(self, cache):
+    super(FlushStrategy, self).__init__(cache)
+
+    def _generate_queue(self):
+      queue = self.items()
+      if ForceFlushList is not None and len(queue) != 0:
+        for metric in queue:
+          if metric[0] in ForceFlushList:
+            log.msg("flushing %s" % metric[0])
+            yield metric[0]
+
+    self.queue = _generate_queue()
+
+  def choose_item(self):
+    return self.queue.next()
+
+
 class _MetricCache(defaultdict):
   """A Singleton dictionary of metric names and lists of their datapoints"""
   def __init__(self, strategy=None):
@@ -289,6 +309,7 @@ class _MetricCache(defaultdict):
     self.strategy = None
     if strategy:
       self.strategy = strategy(self)
+    self.save_strategy = strategy
     super(_MetricCache, self).__init__(dict)
 
   @property
@@ -457,6 +478,25 @@ class _MetricCache(defaultdict):
       instrumentation.set('persist.fileGeneration', stopped - started)
     log.msg("Persisted cache saved in %.2f seconds (metrics:%d queues:%d filesize:%d)" % (stopped - started, size, queues, os.path.getsize(persist_file)))
 
+  def start_flush(self, metric = None):
+    if self.strategy == FlushStrategy:
+      return
+    if metric == None:
+      log.msg("[flush] no flush")
+      return
+    metrics_list = [metric]
+    self.save_strategy = self.strategy
+    ForceFlushList.load_from(metrics_list)
+    self.strategy == FlushStrategy
+    log.msg("[flush] starting flushing %s" % metrics_list)
+
+  def stop_flush(self, abort=False):
+    if self.strategy != FlushStrategy:
+      return
+    self.strategy = self.save_strategy
+    if abort == True:
+      log.msg("[flush] abort flush detected")
+    log.msg("[flush] flushed %d queues in %.2f seconds" % (self.flushqueue_count, time.time() - self.flushqueue_start))
 
 # Initialize a singleton cache instance
 write_strategy = None
