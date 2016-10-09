@@ -177,7 +177,8 @@ class TunedStrategy(DrainStrategy):
           len1 = 0
           len2 = 0
           while queue:
-            if (limit1 != -1 and count >= limit1) or (timelimit1 != -1 and time.time() - t >= timelimit1):
+            if (limit1 != -1 and count >= limit1) or \
+                    (timelimit1 != -1 and time.time() - t >= timelimit1):
               break
             metric = queue.pop()
             count += 1
@@ -188,9 +189,11 @@ class TunedStrategy(DrainStrategy):
             yield metric[0]
           if settings.LOG_CACHE_QUEUE_SORTS:
             log.msg(
-              "[tuned#1] written %d queues/%d metrics in %.2f seconds (%.2f queues/sec %.2f metrics/sec) (more numerous metrics/queue : %d -> %d)" % (
-              count, size, time.time() - t, count / (time.time() - t),
-              size / (time.time() - t), len1, len2))
+              "[tuned#1] written %d queues/%d metrics in %.2f seconds \
+              (%.2f queues/sec %.2f metrics/sec) \
+              (more numerous metrics/queue : %d -> %d)" % (
+               count, size, time.time() - t, count / (time.time() - t),
+               size / (time.time() - t), len1, len2))
           g_size += size
           g_count += count
 
@@ -206,7 +209,8 @@ class TunedStrategy(DrainStrategy):
           count = 0
           size = 0
           while queue:
-            if (limit2 != -1 and count >= limit2) or (timelimit2 != -1 and time.time() - t >= timelimit2):
+            if (limit2 != -1 and count >= limit2) or \
+                    (timelimit2 != -1 and time.time() - t >= timelimit2):
               break
             metric = queue.pop()
             count += 1
@@ -214,9 +218,10 @@ class TunedStrategy(DrainStrategy):
             yield metric[0]
           if settings.LOG_CACHE_QUEUE_SORTS:
             log.msg(
-              "[tuned#2] written %d queues/%d metrics in %.2f seconds (%.2f queues/sec %.2f metrics/sec) (random)" % (
-              count, size, time.time() - t, count / (time.time() - t),
-              size / (time.time() - t)))
+              "[tuned#2] written %d queues/%d metrics in %.2f seconds \
+              (%.2f queues/sec %.2f metrics/sec) (random)" %
+              (count, size, time.time() - t, count / (time.time() - t),
+               size / (time.time() - t)))
           g_size += size
           g_count += count
 
@@ -225,8 +230,8 @@ class TunedStrategy(DrainStrategy):
           t = time.time()
           ordered = sorted(self.oldest, key=lambda x: x[1], reverse=True)
           if settings.LOG_CACHE_QUEUE_SORTS:
-            log.msg("[tuned#3] sorted %d queues in %.2f seconds" % (
-            len(queue), time.time() - t))
+            log.msg("[tuned#3] sorted %d queues in %.2f seconds" %
+                    (len(queue), time.time() - t))
 
           t = time.time()
           count = 0
@@ -234,8 +239,9 @@ class TunedStrategy(DrainStrategy):
           ts1 = 0
           ts2 = 0
           while ordered:
-            if (limit3 != -1 and count >= limit3) or (timelimit3 != -1 and time.time() - t >= timelimit3):
-              break
+            if (limit3 != -1 and count >= limit3) or \
+              (timelimit3 != -1 and time.time() - t >= timelimit3):
+                break
             metric = ordered.pop()
             count += 1
             size += len(self[metric[0]])
@@ -245,9 +251,11 @@ class TunedStrategy(DrainStrategy):
             yield metric[0]
           if settings.LOG_CACHE_QUEUE_SORTS:
             log.msg(
-              "[tuned#3] written %d queues/%d metrics in %.2f seconds (%.2f queues/sec %.2f metrics/sec) (oldest : %d sec -> %d sec late)" % (
-              count, size, time.time() - t, count / (time.time() - t),
-              size / (time.time() - t), int(ts1), int(ts2)))
+              "[tuned#3] written %d queues/%d metrics in %.2f seconds \
+              (%.2f queues/sec %.2f metrics/sec) \
+              (oldest : %d sec -> %d sec late)" %
+              (count, size, time.time() - t, count / (time.time() - t),
+               size / (time.time() - t), int(ts1), int(ts2)))
           g_size += size
           g_count += count
 
@@ -264,17 +272,19 @@ class TunedStrategy(DrainStrategy):
           if count != 0:
             if settings.LOG_CACHE_QUEUE_SORTS:
               log.msg(
-                "[tuned#4] written %d queues/%d metrics in %.2f seconds (%.2f queues/sec %.2f metrics/sec) (flushlist)" % (
-                count, size, time.time() - t, count / (time.time() - t),
-                size / (time.time() - t)))
+                "[tuned#4] written %d queues/%d metrics in %.2f seconds \
+                (%.2f queues/sec %.2f metrics/sec) (flushlist)" %
+                (count, size, time.time() - t, count / (time.time() - t),
+                 size / (time.time() - t)))
           g_size += size
           g_count += count
 
         if settings.LOG_CACHE_QUEUE_SORTS:
           log.msg(
-            "[tuned##] written %d queues/%d metrics in %.2f second (%.2f queues/sec %.2f metrics/sec) (global)" % (
-            g_count, g_size, time.time() - start,
-            g_count / (time.time() - start), g_size / (time.time() - start)))
+            "[tuned##] written %d queues/%d metrics in %.2f second \
+            (%.2f queues/sec %.2f metrics/sec) (global)" %
+            (g_count, g_size, time.time() - start,
+             g_count / (time.time() - start), g_size / (time.time() - start)))
 
     self.queue = _generate_queue()
 
@@ -407,7 +417,9 @@ class _MetricCache(defaultdict):
         except Exception, e:
           log.msg("Persisted cache : invalid data : %s" % line)
       persist.close()
-      log.msg("Loaded persisted cache in %.2f seconds (metrics:%d queues:%d filesize:%d)" % (time.time() - t, size, queues, os.path.getsize(persist_file)))
+      log.msg("Loaded persisted cache in %.2f seconds \
+        (metrics:%d queues:%d filesize:%d)" %
+              (time.time() - t, size, queues, os.path.getsize(persist_file)))
     except Exception, e:
       log.err()
       log.msg("Unable to load persisted cache : %s" % persist_file)
@@ -430,7 +442,7 @@ class _MetricCache(defaultdict):
       log.err("Failed to get mtime of %s" % persist_file)
       return
 
-    log.msg("Starting to save cache to persistant file : %s" % persist_file)
+    log.msg("Starting to save cache to persisted file : %s" % persist_file)
 
     if os.path.isfile(persist_file_tmp):
       os.unlink(persist_file_tmp)
@@ -476,7 +488,8 @@ class _MetricCache(defaultdict):
       instrumentation.set('persist.size', size)
       instrumentation.set('persist.fileSize', os.path.getsize(persist_file))
       instrumentation.set('persist.fileGeneration', stopped - started)
-    log.msg("Persisted cache saved in %.2f seconds (metrics:%d queues:%d filesize:%d)" % (stopped - started, size, queues, os.path.getsize(persist_file)))
+    log.msg("Persisted cache saved in %.2f seconds (metrics:%d queues:%d filesize:%d)" %
+            (stopped - started, size, queues, os.path.getsize(persist_file)))
 
   def start_flush(self, metric = None):
     if self.strategy == FlushStrategy:
@@ -496,7 +509,8 @@ class _MetricCache(defaultdict):
     self.strategy = self.save_strategy
     if abort == True:
       log.msg("[flush] abort flush detected")
-    log.msg("[flush] flushed %d queues in %.2f seconds" % (self.flushqueue_count, time.time() - self.flushqueue_start))
+    log.msg("[flush] flushed %d queues in %.2f seconds" %
+            (self.flushqueue_count, time.time() - self.flushqueue_start))
 
 # Initialize a singleton cache instance
 write_strategy = None
