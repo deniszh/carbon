@@ -98,7 +98,8 @@ defaults = dict(
   REWRITE_RULES='rewrite-rules.conf',
   RELAY_RULES='relay-rules.conf',
   ENABLE_LOGROTATION=True,
-  METRIC_CLIENT_IDLE_TIMEOUT=None
+  METRIC_CLIENT_IDLE_TIMEOUT=None,
+  FLUSH_LIST='flushlist.conf',
 )
 
 
