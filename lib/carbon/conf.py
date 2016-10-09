@@ -21,9 +21,9 @@ from os.path import join, dirname, normpath, exists, isdir
 from optparse import OptionParser
 from ConfigParser import ConfigParser
 
-import whisper
 from carbon import log, state
 from carbon.database import TimeSeriesDatabase
+from carbon.routers import DatapointRouter
 from carbon.exceptions import CarbonConfigException
 
 from twisted.python import usage
@@ -82,11 +82,6 @@ defaults = dict(
   CARBON_METRIC_PREFIX='carbon',
   CARBON_METRIC_INTERVAL=60,
   CACHE_WRITE_STRATEGY='sorted',
-  CACHE_WRITE_TUNED_STRATEGY_LARGEST='1%',
-  CACHE_WRITE_TUNED_STRATEGY_RANDOM='60s',
-  CACHE_WRITE_TUNED_STRATEGY_OLDEST='100',
-  CACHE_PERSIST_INTERVAL=1800,
-  CACHE_PERSIST_FILE="cache.persist",
   WRITE_BACK_FREQUENCY=None,
   MIN_RESET_STAT_FLOW=1000,
   MIN_RESET_RATIO=0.9,
@@ -98,8 +93,7 @@ defaults = dict(
   REWRITE_RULES='rewrite-rules.conf',
   RELAY_RULES='relay-rules.conf',
   ENABLE_LOGROTATION=True,
-  METRIC_CLIENT_IDLE_TIMEOUT=None,
-  FLUSH_LIST='flushlist.conf',
+  METRIC_CLIENT_IDLE_TIMEOUT=None
 )
 
 
@@ -247,23 +241,6 @@ class CarbonCacheOptions(usage.Options):
         if not exists(storage_schemas):
             print "Error: missing required config %s" % storage_schemas
             sys.exit(1)
-
-        if settings.WHISPER_AUTOFLUSH:
-            log.msg("Enabling Whisper autoflush")
-            whisper.AUTOFLUSH = True
-
-        if settings.WHISPER_FALLOCATE_CREATE:
-            if whisper.CAN_FALLOCATE:
-                log.msg("Enabling Whisper fallocate support")
-            else:
-                log.err("WHISPER_FALLOCATE_CREATE is enabled but linking failed.")
-
-        if settings.WHISPER_LOCK_WRITES:
-            if whisper.CAN_LOCK:
-                log.msg("Enabling Whisper file locking")
-                whisper.LOCK = True
-            else:
-                log.err("WHISPER_LOCK_WRITES is enabled but import of fcntl module failed.")
 
         if settings.CACHE_WRITE_STRATEGY not in ('sorted', 'max', 'naive', 'tuned'):
             log.err("%s is not a valid value for CACHE_WRITE_STRATEGY, defaulting to %s" %
@@ -457,11 +434,11 @@ class CarbonRelayOptions(CarbonCacheOptions):
             self["aggregation-rules"] = join(settings["CONF_DIR"], settings['AGGREGATION_RULES'])
         settings["aggregation-rules"] = self["aggregation-rules"]
 
-        if settings["RELAY_METHOD"] not in ("rules", "consistent-hashing", "aggregated-consistent-hashing"):
-            print ("In carbon.conf, RELAY_METHOD must be either 'rules' or "
-                   "'consistent-hashing' or 'aggregated-consistent-hashing'. Invalid value: '%s'" %
-                   settings.RELAY_METHOD)
-            sys.exit(1)
+        router = settings["RELAY_METHOD"]
+        if router not in DatapointRouter.plugins:
+            print ("In carbon.conf, RELAY_METHOD must be one of %s. "
+                   "Invalid value: '%s'" % (', '.join(DatapointRouter.plugins), router))
+            raise SystemExit(1)
 
 
 def get_default_parser(usage="%prog [options] <start|stop|status>"):
