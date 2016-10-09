@@ -187,10 +187,12 @@ CACHE_WRITE_TUNED_STRATEGY_RANDOM = 60s
 # or a time to process (ex : 60s) before cycling to next step. Default : 100. 0 to disable this step
 CACHE_WRITE_TUNED_STRATEGY_OLDEST = 100
 
-# Define the interval (in seconds) between each launch of cache persistance procedure.
-# Persistent cache is stored in a file (cache.persist) in the log directory of each carbon-cache instance
+# Persistent cache is stored in a file CACHE_PERSIST_FILE (cache.persist by default) in the log directory of each carbon-cache instance
 # and is loaded at startup if file exists. This file is also created during process shutdown.
 # This file allow to not loose metrics if cache daemon is shutdown that are not yet flushed in whisper db
+# CACHE_PERSIST_FILE = cache.persist
+
+# Define the interval (in seconds) between each launch of cache persistance procedure.
 # Set to 0 to disable (persistent file still be created at process shutdown)
 CACHE_PERSIST_INTERVAL = 1800
 
