@@ -196,8 +196,8 @@ class CarbonClientFactory(ReconnectingClientFactory):
       self.connectedProtocol.sendQueued()
 
   def queueFullCallback(self, result):
-    log.clients('%s send queue is full (%d datapoints)' % (self, result))
     state.events.cacheFull()
+    log.clients('%s send queue is full (%d datapoints)' % (self, result))
 
   def queueSpaceCallback(self, result):
     if self.queueFull.called:
