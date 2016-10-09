@@ -109,13 +109,13 @@ class TunedStrategy(DrainStrategy):
   def __init__(self, cache):
     super(TunedStrategy, self).__init__(cache)
 
-    def _generate_queue(self):
+    def _generate_queue():
       while True:
         start = time.time()
         t = time.time()
         g_count = 0
         g_size = 0
-        queue = sorted(self.counts, key=lambda x: x[1])
+        queue = sorted(self.cache.counts, key=lambda x: x[1])
         if settings.LOG_CACHE_QUEUE_SORTS:
           log.msg("[tuned#1] sorted %d queues in %.2f seconds" % (
           len(queue), time.time() - t))
@@ -182,7 +182,7 @@ class TunedStrategy(DrainStrategy):
               break
             metric = queue.pop()
             count += 1
-            size += len(self[metric[0]])
+            size += len(self.cache[metric[0]])
             if count == 1:
               len1 = metric[1]
             len2 = metric[1]
@@ -214,7 +214,7 @@ class TunedStrategy(DrainStrategy):
               break
             metric = queue.pop()
             count += 1
-            size += len(self[metric[0]])
+            size += len(self.cache[metric[0]])
             yield metric[0]
           if settings.LOG_CACHE_QUEUE_SORTS:
             log.msg(
@@ -228,7 +228,7 @@ class TunedStrategy(DrainStrategy):
         # Step 3 : got oldest queues (those with oldest metrics)
         if limit3 > 0 or timelimit3 > 0:
           t = time.time()
-          ordered = sorted(self.oldest, key=lambda x: x[1], reverse=True)
+          ordered = sorted(self.cache.oldest, key=lambda x: x[1], reverse=True)
           if settings.LOG_CACHE_QUEUE_SORTS:
             log.msg("[tuned#3] sorted %d queues in %.2f seconds" %
                     (len(queue), time.time() - t))
@@ -244,7 +244,7 @@ class TunedStrategy(DrainStrategy):
                 break
             metric = ordered.pop()
             count += 1
-            size += len(self[metric[0]])
+            size += len(self.cache[metric[0]])
             if count == 1:
               ts1 = time.time() - metric[1]
             ts2 = time.time() - metric[1]
@@ -264,10 +264,10 @@ class TunedStrategy(DrainStrategy):
           t = time.time()
           count = 0
           size = 0
-          for metric in self.items():
+          for metric in self.cache.items():
             if metric[0] in FlushList:
               count += 1
-              size += len(self[metric[0]])
+              size += len(self.cache[metric[0]])
               yield metric[0]
           if count != 0:
             if settings.LOG_CACHE_QUEUE_SORTS:
@@ -333,6 +333,16 @@ class _MetricCache(defaultdict):
     else:
       return self.size >= settings.MAX_CACHE_SIZE
 
+  @property
+  def oldest(self):
+    try:
+      return [(metric, sorted(datapoints)[0][0]) for (metric, datapoints) in
+              self.items()]
+      log.msg
+    except Exception, e:
+      log.msg("failed to create oldest list (%s)" % e)
+      return []
+
   def _check_available_space(self):
     if state.cacheTooFull and self.size < settings.CACHE_SIZE_LOW_WATERMARK:
       log.msg("MetricCache below watermark: self.size=%d" % self.size)
@@ -379,16 +389,7 @@ class _MetricCache(defaultdict):
 
   def shutdown(self):
     # change to simple dequeuing system. generator will not be used any more
-    self.strategy = NaiveStrategy
-
-  @property
-  def oldest(self):
-    try:
-      return [(metric, sorted(datapoints)[0][0]) for (metric, datapoints) in self.items()]
-    except Exception, e:
-      log.exception(e)
-      log.msg("failed to create oldest list (%s)" % e)
-      return []
+    self.strategy = None
 
   def loadPersistMetricCache(self):
     persist_file = "%s/%s" % (settings.LOG_DIR, settings.CACHE_PERSIST_FILE)
@@ -462,7 +463,7 @@ class _MetricCache(defaultdict):
           persist.write("%s%s\n" % (metric, points))
       else:
         while MetricCache:
-          (metric, datapoints) = self.pop()
+          (metric, datapoints) = self.drain_metric()
           size += len(datapoints)
           points = ""
           for datapoint in datapoints:
