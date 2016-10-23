@@ -458,16 +458,22 @@ class _MetricCache(defaultdict):
         for metric, datapoints in metrics:
           size += len(datapoints)
           points = ""
-          for datapoint in datapoints:
-            points += " %s %s" % (datapoint[1], int(datapoint[0]))
+          if size > 1:
+            for datapoint in datapoints:
+              points += " %s %s" % (datapoint[1], int(datapoint[0]))
+          else:
+              points = " %s %s" % (datapoints[1], int(datapoints[0]))  
           persist.write("%s%s\n" % (metric, points))
       else:
         while MetricCache:
           (metric, datapoints) = self.drain_metric()
           size += len(datapoints)
           points = ""
-          for datapoint in datapoints:
-            points += " %s %s" % (datapoint[1], int(datapoint[0]))
+          if size > 1:
+            for datapoint in datapoints:
+              points += " %s %s" % (datapoint[1], int(datapoint[0]))
+          else:
+              points = " %s %s" % (datapoints[1], int(datapoints[0]))  
           persist.write("%s%s\n" % (metric, points))
 
       persist.close()
